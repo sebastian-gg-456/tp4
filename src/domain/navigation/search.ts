@@ -1,4 +1,4 @@
-import { cellKey, isWalkable, type GridMap, type GridPoint } from "../model/grid";
+import { cellKey, entryCostAt, isWalkable, type GridMap, type GridPoint } from "../model/grid";
 import { manhattanDistance, walkableNeighbors } from "./gridGraph";
 
 export type SearchAlgorithm = "bfs" | "astar";
@@ -43,7 +43,7 @@ export function findPathBfs(map: GridMap, start: GridPoint, goal: GridPoint): Se
     explored.push(current);
 
     if (samePoint(current, goal)) {
-      return successResult("bfs", start, goal, parents, explored, maximumFrontier);
+      return successResult("bfs", map, start, goal, parents, explored, maximumFrontier);
     }
 
     for (const neighbor of walkableNeighbors(map, current)) {
@@ -89,7 +89,7 @@ export function findPathAStar(map: GridMap, start: GridPoint, goal: GridPoint): 
     explored.push(current.point);
 
     if (samePoint(current.point, goal)) {
-      return successResult("astar", start, goal, parents, explored, maximumFrontier);
+      return successResult("astar", map, start, goal, parents, explored, maximumFrontier);
     }
 
     for (const neighbor of walkableNeighbors(map, current.point)) {
@@ -98,7 +98,7 @@ export function findPathAStar(map: GridMap, start: GridPoint, goal: GridPoint): 
         continue;
       }
 
-      const candidateCost = current.cost + 1;
+      const candidateCost = current.cost + entryCostAt(map, neighbor);
       const knownCost = bestCosts.get(neighborKey);
       if (knownCost === undefined || candidateCost < knownCost) {
         insertionOrder += 1;
@@ -162,6 +162,7 @@ function lowestPriorityNode(frontier: ReadonlyMap<string, AStarNode>): AStarNode
 
 function successResult(
   algorithm: SearchAlgorithm,
+  map: GridMap,
   start: GridPoint,
   goal: GridPoint,
   parents: ReadonlyMap<string, GridPoint>,
@@ -173,11 +174,35 @@ function successResult(
     algorithm,
     status: "success",
     path,
-    totalCost: path.length - 1,
+    totalCost: totalPathCost(algorithm, map, path),
     expandedNodes: explored.length,
     maximumFrontier,
     explored,
   };
+}
+
+/**
+ * Costo total de la ruta. BFS conserva su semantica unitaria (cuenta aristas);
+ * A* suma el costo de entrada de cada celda, por lo que con un mapa unitario
+ * coincide con la cantidad de pasos y con una franja lenta refleja el rodeo.
+ */
+function totalPathCost(
+  algorithm: SearchAlgorithm,
+  map: GridMap,
+  path: readonly GridPoint[],
+): number {
+  if (algorithm === "bfs") {
+    return path.length - 1;
+  }
+  let cost = 0;
+  for (let index = 1; index < path.length; index += 1) {
+    const cell = path[index];
+    if (!cell) {
+      throw new Error("Path cost invariant failed.");
+    }
+    cost += entryCostAt(map, cell);
+  }
+  return cost;
 }
 
 function failureResult(

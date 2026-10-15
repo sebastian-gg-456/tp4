@@ -9,7 +9,7 @@ import {
   EXTRACTION_CELL,
   TILE_SIZE,
 } from "../../src/application/simulation/labLevel";
-import { cellCenter, type GridPoint } from "../../src/domain/model/grid";
+import { cellCenter, cellKey, worldToCell, type GridPoint } from "../../src/domain/model/grid";
 import type { GuardState } from "../../src/domain/behavior/stateMachine";
 import { initialAlertState } from "../../src/domain/behavior/alertMeter";
 import { initialLastMomentState } from "../../src/domain/behavior/lastMoment";
@@ -36,6 +36,7 @@ interface StepOverrides {
   readonly manualGoal?: GridPoint | null;
   readonly doorToggleRequest?: string;
   readonly toggleAlgorithm?: boolean;
+  readonly terrainCosts?: ReadonlyMap<string, number>;
 }
 
 function start(): World {
@@ -605,5 +606,34 @@ describe("upgrade 4: navigation traceability", () => {
     expect(frames.some((frame) => frame.state.pathStatus !== "success")).toBe(true);
     expect(hasTelemetry(world, "destination-unreachable")).toBe(true);
     expect(world.state.manualGoal).toBeNull();
+  });
+});
+
+describe("variant A: weighted terrain through the simulation consumer", () => {
+  it("sums configured entry costs in the planned route", () => {
+    const world = start();
+    const goalCell = world.state.goalCell;
+    expect(goalCell).not.toBeNull();
+    const goalKey = cellKey(goalCell as GridPoint);
+    const costs: ReadonlyMap<string, number> = new Map([[goalKey, 7]]);
+
+    world.state = { ...world.state, lastPlannedAtMs: -1000 };
+    const frame = step(world, { terrainCosts: costs });
+    const cells = frame.state.waypoints.map((waypoint) => worldToCell(waypoint, TILE_SIZE));
+    const expected = cells
+      .slice(1)
+      .reduce((sum, cell) => sum + (costs.get(cellKey(cell)) ?? 1), 0);
+
+    expect(frame.state.terrainCosts.get(goalKey)).toBe(7);
+    expect(frame.state.totalCost).toBe(expected);
+    expect(frame.state.totalCost).toBe(cells.length - 1 + 6);
+  });
+
+  it("keeps the unit cost when no terrain is configured", () => {
+    const world = start();
+    world.state = { ...world.state, lastPlannedAtMs: -1000 };
+    const frame = step(world);
+
+    expect(frame.state.totalCost).toBe(frame.state.waypoints.length - 1);
   });
 });

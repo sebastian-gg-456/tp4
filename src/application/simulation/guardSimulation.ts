@@ -45,7 +45,7 @@ import {
   validateDoorSpecs,
   type DoorRuntime,
 } from "../../domain/environment/doors";
-import { cellCenter, worldToCell, type GridMap, type GridPoint } from "../../domain/model/grid";
+import { cellCenter, withEntryCosts, worldToCell, type GridMap, type GridPoint } from "../../domain/model/grid";
 import { distanceBetween, type Vector2 } from "../../domain/model/vector";
 import {
   findPathAStar,
@@ -178,6 +178,8 @@ export interface GuardSimulationState {
   readonly distractors: DistractorState;
   readonly playerPosition: Vector2;
   readonly playerFacing: Vector2;
+  /** Configuracion explicita del modo ponderado (variante A). Vacio = unitario. */
+  readonly terrainCosts: ReadonlyMap<string, number>;
   readonly escapes: number;
   readonly lastEscape: LastMomentEscape | null;
   readonly transitions: number;
@@ -201,6 +203,8 @@ export interface GuardSimulationInput {
   readonly doorToggleRequest?: string;
   /** Conmuta BFS/A* para inspeccionar el algoritmo desde la escena (H3). */
   readonly toggleAlgorithm?: boolean;
+  /** Activa el terreno lento (variante A) sin crear una interfaz nueva. */
+  readonly terrainCosts?: ReadonlyMap<string, number>;
 }
 
 export interface GuardSimulationFrame {
@@ -265,6 +269,7 @@ export function initialGuardSimulationState(timeMs = 0): GuardSimulationState {
     distractors: initialDistractorState(timeMs),
     playerPosition: cellCenter(PLAYER_START, TILE_SIZE),
     playerFacing: { x: 1, y: 0 },
+    terrainCosts: new Map(),
     escapes: 0,
     lastEscape: null,
     transitions: 0,
@@ -286,7 +291,10 @@ export function stepGuardSimulation(
   const events: TelemetryEvent[] = [];
   const impacts: ScreenImpact[] = [];
   let state = previous;
-  let map = composeNavigationMap(LAB_MAP, state.doors);
+  if (input.terrainCosts !== undefined) {
+    state = { ...state, terrainCosts: input.terrainCosts };
+  }
+  let map = applyTerrainCosts(composeNavigationMap(LAB_MAP, state.doors), state.terrainCosts);
 
   const playerPosition = input.playerPosition ?? previous.playerPosition;
   const playerFacing = resolveFacing(input.playerVelocity, previous.playerFacing);
@@ -315,7 +323,7 @@ export function stepGuardSimulation(
     ? doorStep.doors
     : toggleDoor(doorStep.doors, input.doorToggleRequest);
   state = { ...state, doors: toggled };
-  map = composeNavigationMap(LAB_MAP, state.doors);
+  map = applyTerrainCosts(composeNavigationMap(LAB_MAP, state.doors), state.terrainCosts);
 
   // H3: el operador puede alternar BFS/A* para inspeccionar ambos algoritmos.
   if (input.toggleAlgorithm) {
@@ -958,6 +966,13 @@ function predictImpact(
     return null;
   }
   return cellCenter(cell, tileSize);
+}
+
+function applyTerrainCosts(
+  map: GridMap,
+  terrainCosts: ReadonlyMap<string, number>,
+): GridMap {
+  return terrainCosts.size > 0 ? withEntryCosts(map, terrainCosts) : map;
 }
 
 export const GUARD_TUNING = {

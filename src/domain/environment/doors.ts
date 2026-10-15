@@ -179,7 +179,12 @@ export function composeNavigationMap(
     }
   }
 
-  return { width: base.width, height: base.height, blocked };
+  return {
+    width: base.width,
+    height: base.height,
+    blocked,
+    entryCosts: base.entryCosts,
+  };
 }
 
 /** Verifica que cada puerta recorte un muro real y que sus tiempos sean utilizables. */

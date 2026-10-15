@@ -7,7 +7,16 @@ export interface GridMap {
   readonly width: number;
   readonly height: number;
   readonly blocked: ReadonlySet<string>;
+  /**
+   * Costo de entrar a una celda, indexado por `cellKey`. Una celda ausente
+   * cuesta 1. Sólo lo consume la busqueda ponderada (A*); BFS conserva su
+   * semantica unitaria e ignora estos datos.
+   */
+  readonly entryCosts: ReadonlyMap<string, number>;
 }
+
+/** Costo por defecto de una celda cuando el mapa no declara uno. */
+export const DEFAULT_ENTRY_COST = 1;
 
 export function cellKey(point: GridPoint): string {
   return `${point.x},${point.y}`;
@@ -17,6 +26,7 @@ export function createGridMap(
   width: number,
   height: number,
   blockedCells: Iterable<GridPoint>,
+  entryCosts: ReadonlyMap<string, number> = new Map(),
 ): GridMap {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
     throw new Error("Grid dimensions must be positive integers.");
@@ -30,7 +40,30 @@ export function createGridMap(
     blocked.add(cellKey(point));
   }
 
-  return { width, height, blocked };
+  for (const [key, cost] of entryCosts) {
+    if (!Number.isFinite(cost) || cost <= 0) {
+      throw new Error(`Entry cost must be finite and positive: ${key}.`);
+    }
+  }
+
+  return { width, height, blocked, entryCosts: new Map(entryCosts) };
+}
+
+/** Costo de entrar a `point`. Devuelve 1 si el mapa no declara un costo. */
+export function entryCostAt(map: GridMap, point: GridPoint): number {
+  return map.entryCosts.get(cellKey(point)) ?? DEFAULT_ENTRY_COST;
+}
+
+/**
+ * Devuelve una copia del mapa con nuevos costos de entrada. Se usa tanto para
+ * activar una franja lenta como para restaurarla a costo 1 pasando un mapa
+ * vacío: A* recibe datos frescos y no reutiliza costos anteriores.
+ */
+export function withEntryCosts(
+  map: GridMap,
+  entryCosts: ReadonlyMap<string, number>,
+): GridMap {
+  return { ...map, entryCosts: new Map(entryCosts) };
 }
 
 export function isInside(
